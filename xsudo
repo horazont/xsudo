@@ -1,0 +1,44 @@
+#!/bin/bash
+set -euo pipefail
+if [ "x${XSUDO_XAUTH_FWD:-}" = 'x' ]; then
+	user="root"
+	self="$(realpath "$0")"
+	options="$(getopt -sbash -- 'u:' "$@")"
+	eval set -- "$options"
+	while true; do
+		case "$1" in
+			-u)
+				shift
+				user="$1"
+				;;
+			--)
+				shift
+				break
+				;;
+		esac
+		shift
+	done
+	export XSUDO_XAUTH_FWD=$(xauth nextract /dev/stdout "$DISPLAY")
+	exec sudo -u "$user" --preserve-env=XSUDO_XAUTH_FWD --preserve-env=DISPLAY "${self}" "$@"
+fi
+
+self="$(realpath "$0")"
+old_umask="$(umask)"
+umask 0077
+authdir="$(mktemp -d)"
+
+function cleanup() {
+	rm -rf "$authdir"
+}
+
+trap cleanup EXIT
+
+authfile="$authdir/xauth"
+authin="$authdir/nauth"
+cat <<<"$XSUDO_XAUTH_FWD" > "$authin"
+unset XSUDO_XAUTH_FWD
+touch "$authfile"
+xauth -f "$authfile" nmerge "$authin"
+umask "$old_umask"
+cd ~
+env -i "XAUTHORITY=$authfile" "DISPLAY=$DISPLAY" bash -l -c 'exec "$@"' ignored "$@"
