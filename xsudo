@@ -1,6 +1,22 @@
 #!/bin/bash
 set -euo pipefail
 
+# TECHNICAL DETAILS
+#
+# The flow of a single xsudo usage is the following:
+#
+# 1. Parse options
+# 2. Extract xauthority information for $DISPLAY from the original user
+# 3. Wrap some options + xauth information into environment variables
+# 4. Switch privileges to the target user, preserving the environment
+#    and invoke the script again.
+# 5. Parse the additional options (for -i, cleanenv)
+# 6. Import the authority information from the environment into a
+#    temporary xauthority file. Set the temporary file as environment
+#    so that GUI processes can use it.
+# 7. Invoke the original command via a login shell. If -i was passed,
+#    use `env` to clean the environment before invoking the shell.
+
 function print_usage() {
 	echo "usage: $0 [-u USER] [-i] [-h] [--] COMMAND [ARGS...]" >&2
 	echo >&2
@@ -15,15 +31,20 @@ function print_usage() {
 }
 
 
+# Check if this is our escalated self-invocation.
 if [ "x${XSUDO_XAUTH_FWD:-}" = 'x' ]; then
+	# It is not; parse the human-facing command line options.
 	user=""
 	fwd_opts=""
 	self="$(realpath "$0")"
+	# Have to ignore getopt errors to be able to print the usage.
 	set +e
 	options="$(getopt -sbash -l 'help' -- 'hu:i' "$@")"
 	parse_result="$?"
 	set -e
 	if [ $parse_result = '1' ]; then
+		# FIXME: It would be nicer to show the error message
+		# below the usage.
 		echo >&2
 		print_usage
 		exit 2
@@ -49,6 +70,10 @@ if [ "x${XSUDO_XAUTH_FWD:-}" = 'x' ]; then
 		esac
 		shift
 	done
+
+	# Check if invocation is valid:
+	# - must at least have a command
+	# - `-u` must have been given
 	if [ $# = '0' ]; then
 		echo "error: must pass a command" >&2
 		echo >&2
@@ -61,14 +86,24 @@ if [ "x${XSUDO_XAUTH_FWD:-}" = 'x' ]; then
 		print_usage
 		exit 2
 	fi
+
+	# Wrap up the options to forward and the xauth into enviroment
+	# variables
 	export XSUDO_OPT_FWD="$fwd_opts"
 	export XSUDO_XAUTH_FWD="$(xauth nextract /dev/stdout "$DISPLAY")"
+
+	# Re-invoke this script as the target user with the correct
+	# environment as well as the command + args.
 	exec sudo -u "$user" --preserve-env=XSUDO_OPT_FWD --preserve-env=XSUDO_XAUTH_FWD --preserve-env=DISPLAY "${self}" "$@"
 fi
 
+# This is the nested invocation. Parse the forwarded options alongside
+# the command + args.
 eval set -- $XSUDO_OPT_FWD -- "$@"
+unset XSUDO_OPT_FWD
 eval set -- "$(getopt -sbash -- 'i' "$@")"
 
+# -i
 cleanenv=0
 while true; do
 	case "$1" in
@@ -83,17 +118,20 @@ while true; do
 	shift
 done
 
-self="$(realpath "$0")"
+# Set a strict umask for the xauth data 
 old_umask="$(umask)"
 umask 0077
 authdir="$(mktemp -d)"
 
+# Delete the temporary data once we’re done
 function cleanup() {
 	rm -rf "$authdir"
 }
-
 trap cleanup EXIT
 
+# Do some tricks to avoid the xauthority data from appearing in `ps`,
+# or more generally, in /proc/*/cmdline, since that is very often world
+# readable.
 authfile="$authdir/xauth"
 authin="$authdir/nauth"
 cat <<<"$XSUDO_XAUTH_FWD" > "$authin"
@@ -101,7 +139,13 @@ unset XSUDO_XAUTH_FWD
 touch "$authfile"
 xauth -f "$authfile" nmerge "$authin"
 umask "$old_umask"
+
+# Switch to the target user’s home directory for usability.
+# TODO: Do we want to make this optional via a cmd line flag?
 cd ~
+
+# The `ignored` in the following commandlines ends up as `$0` inside the
+# bash invocation, and is indeed not used.
 if [ "$cleanenv" = '1' ]; then
 	env -i "XAUTHORITY=$authfile" "DISPLAY=$DISPLAY" bash -l -c 'exec "$@"' ignored "$@"
 else
