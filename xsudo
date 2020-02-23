@@ -8,8 +8,7 @@ function print_usage() {
 	echo >&2
 	echo "Optional arguments:" >&2
 	echo >&2
-	echo "	-u USER	The user to run the command as" >&2
-	echo "		(default: root)" >&2
+	echo "	-u USER	The user to run the command as. Required." >&2
 	echo "	-i	Clean the environment" >&2
 	echo "	-h	Print this help message" >&2
 	echo >&2
@@ -17,7 +16,7 @@ function print_usage() {
 
 
 if [ "x${XSUDO_XAUTH_FWD:-}" = 'x' ]; then
-	user="root"
+	user=""
 	fwd_opts=""
 	self="$(realpath "$0")"
 	set +e
@@ -52,6 +51,12 @@ if [ "x${XSUDO_XAUTH_FWD:-}" = 'x' ]; then
 	done
 	if [ $# = '0' ]; then
 		echo "error: must pass a command" >&2
+		echo >&2
+		print_usage
+		exit 2
+	fi
+	if [ "x$user" = 'x' ]; then
+		echo "error: -u option is required" >&2
 		echo >&2
 		print_usage
 		exit 2
