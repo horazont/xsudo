@@ -1,15 +1,47 @@
 #!/bin/bash
 set -euo pipefail
+
+function print_usage() {
+	echo "usage: $0 [-u USER] [-i] [-h] [--] COMMAND [ARGS...]" >&2
+	echo >&2
+	echo "Run an X11 application as a different user." >&2
+	echo >&2
+	echo "Optional arguments:" >&2
+	echo >&2
+	echo "	-u USER	The user to run the command as" >&2
+	echo "		(default: root)" >&2
+	echo "	-i	Clean the environment" >&2
+	echo "	-h	Print this help message" >&2
+	echo >&2
+}
+
+
 if [ "x${XSUDO_XAUTH_FWD:-}" = 'x' ]; then
 	user="root"
+	fwd_opts=""
 	self="$(realpath "$0")"
-	options="$(getopt -sbash -- 'u:' "$@")"
+	set +e
+	options="$(getopt -sbash -l 'help' -- 'hu:i' "$@")"
+	parse_result="$?"
+	set -e
+	if [ $parse_result = '1' ]; then
+		echo >&2
+		print_usage
+		exit 2
+	fi
 	eval set -- "$options"
 	while true; do
 		case "$1" in
 			-u)
 				shift
 				user="$1"
+				;;
+			-i)
+				fwd_opts="$fwd_opts -i"
+				;;
+			-h|--help)
+				print_usage
+				exit 0
 				;;
 			--)
 				shift
@@ -18,9 +50,33 @@ if [ "x${XSUDO_XAUTH_FWD:-}" = 'x' ]; then
 		esac
 		shift
 	done
-	export XSUDO_XAUTH_FWD=$(xauth nextract /dev/stdout "$DISPLAY")
-	exec sudo -u "$user" --preserve-env=XSUDO_XAUTH_FWD --preserve-env=DISPLAY "${self}" "$@"
+	if [ $# = '0' ]; then
+		echo "error: must pass a command" >&2
+		echo >&2
+		print_usage
+		exit 2
+	fi
+	export XSUDO_OPT_FWD="$fwd_opts"
+	export XSUDO_XAUTH_FWD="$(xauth nextract /dev/stdout "$DISPLAY")"
+	exec sudo -u "$user" --preserve-env=XSUDO_OPT_FWD --preserve-env=XSUDO_XAUTH_FWD --preserve-env=DISPLAY "${self}" "$@"
 fi
+
+eval set -- $XSUDO_OPT_FWD -- "$@"
+eval set -- "$(getopt -sbash -- 'i' "$@")"
+
+cleanenv=0
+while true; do
+	case "$1" in
+		-i)
+			cleanenv=1
+			;;
+		--)
+			shift
+			break
+			;;
+	esac
+	shift
+done
 
 self="$(realpath "$0")"
 old_umask="$(umask)"
@@ -41,4 +97,9 @@ touch "$authfile"
 xauth -f "$authfile" nmerge "$authin"
 umask "$old_umask"
 cd ~
-env -i "XAUTHORITY=$authfile" "DISPLAY=$DISPLAY" bash -l -c 'exec "$@"' ignored "$@"
+if [ "$cleanenv" = '1' ]; then
+	env -i "XAUTHORITY=$authfile" "DISPLAY=$DISPLAY" bash -l -c 'exec "$@"' ignored "$@"
+else
+	export XAUTHORITY="$authfile"
+	bash -l -c 'exec "$@"' ignored "$@"
+fi
