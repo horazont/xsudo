@@ -47,7 +47,7 @@ if [ "x${XSUDO_XAUTH_FWD:-}" = 'x' ]; then
 		# below the usage.
 		echo >&2
 		print_usage
-		exit 2
+		exit 255
 	fi
 	eval set -- "$options"
 	while true; do
@@ -78,13 +78,13 @@ if [ "x${XSUDO_XAUTH_FWD:-}" = 'x' ]; then
 		echo "error: must pass a command" >&2
 		echo >&2
 		print_usage
-		exit 2
+		exit 255
 	fi
 	if [ "x$user" = 'x' ]; then
 		echo "error: -u option is required" >&2
 		echo >&2
 		print_usage
-		exit 2
+		exit 255
 	fi
 
 	# Wrap up the options to forward and the xauth into enviroment
@@ -122,10 +122,12 @@ done
 old_umask="$(umask)"
 umask 0077
 authdir="$(mktemp -d)"
+rc=255
 
 # Delete the temporary data once we’re done
 function cleanup() {
 	rm -rf "$authdir"
+	exit "$rc"
 }
 trap cleanup EXIT
 
@@ -146,9 +148,12 @@ cd ~
 
 # The `ignored` in the following commandlines ends up as `$0` inside the
 # bash invocation, and is indeed not used.
+set +e
 if [ "$cleanenv" = '1' ]; then
 	env -i "XAUTHORITY=$authfile" "DISPLAY=$DISPLAY" bash -l -c 'exec "$@"' ignored "$@"
+	rc="$?"
 else
 	export XAUTHORITY="$authfile"
 	bash -l -c 'exec "$@"' ignored "$@"
+	rc="$?"
 fi
