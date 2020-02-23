@@ -99,9 +99,10 @@ fi
 
 # This is the nested invocation. Parse the forwarded options alongside
 # the command + args.
-eval set -- $XSUDO_OPT_FWD -- "$@"
+cmd=("$@")
+opts=($XSUDO_OPT_FWD)
 unset XSUDO_OPT_FWD
-eval set -- "$(getopt -sbash -- 'i' "$@")"
+eval set -- "$(getopt -sbash -- 'i' "${opts[@]}")"
 
 # -i
 cleanenv=0
@@ -150,10 +151,10 @@ cd ~
 # bash invocation, and is indeed not used.
 set +e
 if [ "$cleanenv" = '1' ]; then
-	env -i "XAUTHORITY=$authfile" "DISPLAY=$DISPLAY" bash -l -c 'exec "$@"' ignored "$@"
+	env -i "XAUTHORITY=$authfile" "DISPLAY=$DISPLAY" bash -l -c 'exec "$@"' ignored "${cmd[@]}"
 	rc="$?"
 else
 	export XAUTHORITY="$authfile"
-	bash -l -c 'exec "$@"' ignored "$@"
+	bash -l -c 'exec "$@"' ignored "${cmd[@]}"
 	rc="$?"
 fi
