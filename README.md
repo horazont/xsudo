@@ -14,6 +14,8 @@ Optional arguments:
 
 ```
 
+This was inspired by [an answer to my question on SuperUser](https://superuser.com/a/1527506/122572) on how to substitute kdesudo and gksudo.
+
 **Note:** This is **not** meant to be used to execute commands as root, which is why the ``-u`` option is required!
 
 **Note:** The user passed to `-u` needs to be able to read and execute the script.
