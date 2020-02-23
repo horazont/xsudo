@@ -50,6 +50,20 @@ shell. This can currently not be turned off or changed.
 `xsudo` exits with the exit status of the called command or 255 in case
 of an internal error.
 
+## Limitations and Known Bugs
+
+- The command will always be executed under a `bash` login shell, even
+  if the user has a different shell set. This should be fixed in a
+  future version.
+
+- `xsudo` always changes directory to the home directory of the target
+  user. This is intended as a convenience function.
+
+## Bug Reports
+
+Report any bugs or issues you encounter to the
+[Bugtracker on GitHub](https://github.com/horazont/xsudo/issues).
+
 ## See Also
 
 ssh(1) with the `-X` option, kdesudo(1), gksudo(1)
